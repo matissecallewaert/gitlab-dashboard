@@ -1,0 +1,93 @@
+/* 🔹 Reduce FullCalendar header toolbar button size */
+.fc .fc-toolbar {
+  font-size: 14px !important;
+}
+
+/* 🔹 Apply rounded corners to the outer FullCalendar container */
+.fc {
+  overflow: hidden; /* Prevents content overflow */
+  font-size: 14px;
+}
+
+.fc .fc-scrollgrid {
+  border-radius: 8px;
+  overflow: hidden !important;
+}
+
+/* Ensure the top left & top right corners are rounded */
+.fc .fc-toolbar {
+  border-top-left-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+}
+
+/* Ensure the bottom left & bottom right corners are rounded */
+.fc .fc-view-harness {
+  border-bottom-left-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+}
+
+/* 🔹 Button Styling */
+.fc .fc-button {
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  height: 28px !important;
+  line-height: 1 !important;
+  border-radius: 6px !important;
+}
+
+/* 🔹 Reduce Toolbar Title Size */
+.fc .fc-toolbar-title {
+  font-size: 16px !important;
+}
+
+/* 🔹 Adjust Button Group Spacing */
+.fc .fc-button-group {
+  gap: 4px !important;
+}
+
+/* ============================================================= */
+/* 🔹 Dark Mode: Change ALL Table Borders (Vertical + Horizontal) */
+/* ============================================================= */
+.dark-mode .fc {
+  color: #f0f2f5 !important;
+  border-color: #344767 !important; /* General dark mode border */
+}
+
+/* 🔹 Inner Table Cell Borders (Vertical & Horizontal) */
+.dark-mode .fc .fc-timegrid-slot {
+  border-color: #344767 !important; /* Dark mode inner grid borders */
+}
+
+/* 🔹 Vertical Borders Between Columns (Week & Day Views) */
+.dark-mode .fc .fc-timegrid-slot-frame {
+  border-right: 1px solid #344767 !important;
+}
+
+/* 🔹 Time Grid Borders */
+.dark-mode .fc .fc-timegrid-axis {
+  border-right: 1px solid #344767 !important;
+}
+
+.dark-mode .fc .fc-timegrid-divider {
+  border-color: #344767 !important;
+}
+
+/* 🔹 Horizontal Slot Borders (TimeGrid) */
+.dark-mode .fc .fc-timegrid-slot {
+  border-top: 1px solid #344767 !important;
+}
+
+/* 🔹 Borders Between Rows (Time Slots) */
+.dark-mode .fc .fc-timegrid-slots tr {
+  border-bottom: 1px solid #344767 !important;
+}
+
+/* 🔹 Ensure Time Labels are Readable */
+.dark-mode .fc .fc-timegrid-axis-cushion {
+  color: #f0f2f5 !important;
+}
+
+/* 🔹 Fix Event Borders */
+.dark-mode .fc .fc-event {
+  border: 1px solid #676e95 !important;
+}
