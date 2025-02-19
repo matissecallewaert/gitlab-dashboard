@@ -10,6 +10,7 @@ import { useMaterialUIController } from "context";
 import VerticalBarChart from "examples/Charts/BarCharts/VerticalBarChart";
 import MDTypography from "components/MDTypography";
 import SprintCycleTime from "./components/SprintCycleTime";
+import Sprints from "./components/sprints";
 
 function Dashboard() {
   const [controller] = useMaterialUIController();
@@ -270,14 +271,7 @@ function Dashboard() {
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
                 <FadeIn duration={300}>
-                  <VerticalBarChart
-                    icon={{ component: "today", color: "dark" }}
-                    title="Iteration Logged Hours"
-                    description="Logged hours per sprint (iteration)"
-                    height="19.125rem"
-                    chart={gitlabStats.iterationData}
-                    color={sidenavColor}
-                  />
+                  <Sprints />
                 </FadeIn>
               </Grid>
               <Grid item xs={12} md={6}>

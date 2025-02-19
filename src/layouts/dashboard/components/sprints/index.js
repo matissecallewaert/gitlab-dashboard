@@ -137,22 +137,18 @@ function Sprints() {
   }
 
   return (
-    <DashboardLayout>
-      <DashboardNavbar />
-      <MDBox py={3}>
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <VerticalBarChart
-              icon={{ component: "timeline", color: sidenavColor }}
-              title="Issue Weights vs Logged Hours"
-              description="Total estimated (weights) vs. actual logged hours per sprint"
-              chart={sprintsChartData}
-            />
-          </Grid>
+    <MDBox py={3}>
+      <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <VerticalBarChart
+            icon={{ component: "timeline", color: sidenavColor }}
+            title="Issue Weights vs Logged Hours"
+            description="Total estimated (weights) vs. actual logged hours per sprint"
+            chart={sprintsChartData}
+          />
         </Grid>
-      </MDBox>
-      <Footer />
-    </DashboardLayout>
+      </Grid>
+    </MDBox>
   );
 }
 
