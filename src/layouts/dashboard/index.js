@@ -165,7 +165,9 @@ function Dashboard() {
         const iterationData = filteredIterations.map((iter) => (iter.totalTime / 3600).toFixed(2));
 
         // Build member hours chart data
-        const memberLabels = Object.keys(memberHours);
+        const memberLabels = Object.keys(memberHours).sort(
+          (a, b) => memberHours[b] - memberHours[a]
+        );
         const memberData = memberLabels.map((username) =>
           (memberHours[username] / 3600).toFixed(2)
         );
