@@ -38,6 +38,7 @@ Coded by www.creative-tim.com
 // @mui icons
 import Icon from "@mui/material/Icon";
 import Dashboard from "layouts/dashboard";
+import IssuesDependencyGraph from "layouts/gantt";
 import MemberIterationMetrics from "layouts/members";
 import Merges from "layouts/merges";
 
@@ -65,6 +66,14 @@ const routes = [
     icon: <Icon fontSize="small">person</Icon>,
     route: "/members",
     component: <MemberIterationMetrics />,
+  },
+  {
+    type: "collapse",
+    name: "Gantt Chart",
+    key: "gantt-chart",
+    icon: <Icon fontSize="small">schema</Icon>,
+    route: "/gantt-chart",
+    component: <IssuesDependencyGraph />,
   },
 ];
 
