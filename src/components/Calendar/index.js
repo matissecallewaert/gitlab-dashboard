@@ -5,10 +5,11 @@ import MDBox from "components/MDBox";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
+import googleCalendarPlugin from "@fullcalendar/google-calendar";
 import { useMaterialUIController } from "context";
 import "./schedule.css";
 
-const FullCalendarCard = ({ events, initialView }) => {
+const FullCalendarCard = ({ initialView }) => {
   const [controller] = useMaterialUIController();
   const { darkMode, sidenavColor } = controller;
 
@@ -21,6 +22,9 @@ const FullCalendarCard = ({ events, initialView }) => {
     error: "#F44335",
   };
 
+  const googleCalendarApiKey = process.env.REACT_APP_GOOGLE_CALENDAR_API_KEY;
+  const calendarId = process.env.REACT_APP_GOOGLE_CALENDAR_ID;
+
   return (
     <Card sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <MDBox
@@ -28,9 +32,10 @@ const FullCalendarCard = ({ events, initialView }) => {
         className={darkMode ? "dark-mode" : ""}
       >
         <FullCalendar
-          plugins={[dayGridPlugin, timeGridPlugin]}
+          plugins={[dayGridPlugin, timeGridPlugin, googleCalendarPlugin]}
           initialView={initialView}
-          events={events}
+          googleCalendarApiKey={googleCalendarApiKey}
+          events={{ googleCalendarId: calendarId }}
           headerToolbar={{
             left: "prev,next today",
             center: "title",
@@ -46,14 +51,11 @@ const FullCalendarCard = ({ events, initialView }) => {
   );
 };
 
-// Set default props
 FullCalendarCard.defaultProps = {
-  initialView: "timeGridWeek",
+  initialView: "dayGridMonth",
 };
 
-// Prop type validation
 FullCalendarCard.propTypes = {
-  events: PropTypes.array.isRequired,
   initialView: PropTypes.string,
 };
 

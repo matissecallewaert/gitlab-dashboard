@@ -163,13 +163,9 @@ function Sprints() {
 
   if (loading || !sprintsChartData) {
     return (
-      <DashboardLayout>
-        <DashboardNavbar />
-        <MDBox py={3} textAlign="center">
-          <MDTypography variant="h6">Loading Sprints Data...</MDTypography>
-        </MDBox>
-        <Footer />
-      </DashboardLayout>
+      <MDBox py={3} textAlign="center">
+        <MDTypography variant="h6">Loading Sprints Data...</MDTypography>
+      </MDBox>
     );
   }
 

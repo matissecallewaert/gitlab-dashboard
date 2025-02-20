@@ -4,79 +4,142 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Footer from "examples/Footer";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
-import { Graph } from "react-d3-graph";
+import { Network, Node, Edge } from "react-vis-network";
+import PropTypes from "prop-types";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import FormControl from "@mui/material/FormControl";
+import InputLabel from "@mui/material/InputLabel";
+
+// Helper to compute contrasting text color based on a hex background.
+function getContrastingColor(hex) {
+  const hexVal = hex.replace(/^#/, "");
+  const r = parseInt(hexVal.substring(0, 2), 16);
+  const g = parseInt(hexVal.substring(2, 4), 16);
+  const b = parseInt(hexVal.substring(4, 6), 16);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 128 ? "black" : "white";
+}
+
+// Global mapping for project colors.
+const projectColorMap = {};
+function getProjectColor(project) {
+  if (!projectColorMap[project]) {
+    projectColorMap[project] = "#" + Math.floor(Math.random() * 16777215).toString(16);
+  }
+  return projectColorMap[project];
+}
+
+// Custom node component that returns a proper SVG element.
+const CustomNode = (props) => {
+  const { title, labels, project } = props;
+  const borderColor = getProjectColor(project);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="150" height="80">
+      <rect width="150" height="80" rx="5" fill="white" stroke={borderColor} strokeWidth="8" />
+      <foreignObject x="0" y="0" width="150" height="80">
+        <div
+          xmlns="http://www.w3.org/1999/xhtml"
+          style={{
+            fontSize: "10px",
+            color: "black",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            height: "100%",
+            overflow: "hidden",
+            wordWrap: "break-word",
+            padding: "0 5px",
+          }}
+        >
+          <div style={{ marginBottom: "4px", fontWeight: "bold" }}>{title}</div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              gap: "4px",
+            }}
+          >
+            {labels && labels.length > 0
+              ? labels.map((label) => (
+                  <span
+                    key={label.title}
+                    style={{
+                      backgroundColor: label.color,
+                      color: getContrastingColor(label.color),
+                      padding: "2px 6px",
+                      borderRadius: "12px",
+                      fontSize: "8px",
+                    }}
+                  >
+                    {label.title}
+                  </span>
+                ))
+              : null}
+          </div>
+        </div>
+      </foreignObject>
+    </svg>
+  );
+};
+
+CustomNode.defaultProps = {
+  title: "No Title",
+  labels: [],
+  project: "Default Project",
+};
+
+CustomNode.propTypes = {
+  title: PropTypes.string,
+  labels: PropTypes.array,
+  project: PropTypes.string,
+};
 
 function IssuesDependencyGraph() {
   const [loading, setLoading] = useState(true);
-  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
   const [issues, setIssues] = useState([]);
   const [iterations, setIterations] = useState([]);
+  const [projects, setProjects] = useState([]); // New state for projects
   const [selectedIteration, setSelectedIteration] = useState("all");
+  const [networkInstance, setNetworkInstance] = useState(null);
 
   const url = process.env.REACT_APP_GITLAB_URL;
   const token = process.env.REACT_APP_GITLAB_TOKEN;
   const group = process.env.REACT_APP_GITLAB_GROUP;
 
-  // Graph configuration
-  const graphConfig = {
-    nodeHighlightBehavior: true,
-    node: {
-      color: "black",
-      size: 400,
-      highlightStrokeColor: "blue",
-      labelProperty: "label",
-      fontSize: 12,
-      highlightFontSize: 16,
+  // Modified vis-network options for a left-to-right hierarchical layout.
+  const visOptions = {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        direction: "LR",
+        sortMethod: "directed",
+        nodeSpacing: 150,
+        levelSeparation: 200,
+        treeSpacing: 10,
+        blockShifting: true,
+        edgeMinimization: false,
+        parentCentralization: false,
+      },
     },
-    link: {
-      highlightColor: "blue",
+    physics: {
+      enabled: true,
     },
-    directed: true,
-    height: window.innerHeight * 0.8,
-    width: window.innerWidth * 0.8,
-    staticGraph: true,
+    interaction: {
+      hover: true,
+      zoomView: true,
+      dragView: true,
+    },
   };
 
-  // Helper to compute node levels and assign positions.
-  const computeLevels = (nodes, links) => {
-    const nodeMap = {};
-    nodes.forEach((node) => {
-      nodeMap[node.id] = { ...node, indegree: 0, level: 0 };
-    });
-    // Calculate indegree for each node
-    links.forEach((link) => {
-      if (nodeMap[link.target]) {
-        nodeMap[link.target].indegree++;
-      }
-    });
-    // Initialize queue with nodes that have indegree 0
-    const queue = [];
-    Object.values(nodeMap).forEach((node) => {
-      if (node.indegree === 0) queue.push(node);
-    });
-    while (queue.length > 0) {
-      const curr = queue.shift();
-      links.forEach((link) => {
-        if (link.source === curr.id && nodeMap[link.target]) {
-          const candidateLevel = curr.level + 1;
-          if (candidateLevel > nodeMap[link.target].level) {
-            nodeMap[link.target].level = candidateLevel;
-          }
-          nodeMap[link.target].indegree--;
-          if (nodeMap[link.target].indegree === 0) {
-            queue.push(nodeMap[link.target]);
-          }
-        }
-      });
-    }
-    return Object.values(nodeMap);
-  };
-
-  // Fetch iterations and issues using pagination.
+  // Fetch iterations and issues.
   useEffect(() => {
     async function fetchData() {
       try {
-        // Fetch iterations (for the dropdown) including startDate.
         const iterationsQuery = `
           query {
             group(fullPath: "${group}") {
@@ -99,14 +162,13 @@ function IssuesDependencyGraph() {
           body: JSON.stringify({ query: iterationsQuery }),
         });
         const iterationsResult = await iterationsResponse.json();
+        if (!iterationsResult.data) {
+          console.error("Iterations query error:", iterationsResult.errors);
+          throw new Error("Iterations query error");
+        }
         const fetchedIterations = iterationsResult.data.group.iterations.nodes;
-        // Delete iteration with id="gid://gitlab/Iteration/60"
-        const filteredIterations = fetchedIterations.filter(
-          (iter) => iter.id !== "gid://gitlab/Iteration/60"
-        );
-        setIterations(filteredIterations);
+        setIterations(fetchedIterations);
 
-        // Now fetch all issues with pagination.
         let allIssues = [];
         let hasNextPage = true;
         let after = null;
@@ -129,6 +191,16 @@ function IssuesDependencyGraph() {
                         closedAt
                       }
                     }
+                    description
+                    labels {
+                      nodes {
+                        ... on Label {
+                          title
+                          color
+                        }
+                      }
+                    }
+                    projectId
                   }
                   pageInfo {
                     endCursor
@@ -150,12 +222,15 @@ function IssuesDependencyGraph() {
             }),
           });
           const issuesResult = await issuesResponse.json();
+          if (!issuesResult.data) {
+            console.error("Issues query error:", issuesResult.errors);
+            throw new Error("Issues query error");
+          }
           const issuesData = issuesResult.data.group.issues;
           allIssues = allIssues.concat(issuesData.nodes);
           hasNextPage = issuesData.pageInfo.hasNextPage;
           after = issuesData.pageInfo.endCursor;
         }
-        // Filter out any issues that might have a closedAt value.
         const openIssues = allIssues.filter((issue) => !issue.closedAt);
         setIssues(openIssues);
       } catch (error) {
@@ -167,9 +242,59 @@ function IssuesDependencyGraph() {
     fetchData();
   }, [group, token, url]);
 
-  // Recompute graph data when issues or the selected iteration change.
+  // Fetch projects separately.
   useEffect(() => {
-    // If an iteration is selected (other than "all"), filter issues by matching iteration.startDate.
+    async function fetchProjects() {
+      try {
+        const projectsQuery = `
+          query {
+            group(fullPath: "${group}") {
+              projects(includeSubgroups: true) {
+                nodes {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        `;
+        const projectsResponse = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token,
+          },
+          body: JSON.stringify({ query: projectsQuery }),
+        });
+        const projectsResult = await projectsResponse.json();
+        if (!projectsResult.data) {
+          console.error("Projects query error:", projectsResult.errors);
+          throw new Error("Projects query error");
+        }
+
+        const projectsSplit = projectsResult.data.group.projects.nodes.map((project) => {
+          const splitId = project.id.split("/").pop();
+          return { ...project, id: splitId };
+        });
+
+        // Create a set of active project IDs from the issues currently displayed.
+        const activeProjectIds = new Set(
+          issues.map((issue) => (issue.projectId ? issue.projectId.toString() : "Default Project"))
+        );
+        // Filter out projects that have no issues on the canvas.
+        const fetchedProjects = projectsSplit.filter((project) =>
+          activeProjectIds.has(project.id.toString())
+        );
+        setProjects(fetchedProjects);
+      } catch (error) {
+        console.error("Error fetching projects:", error);
+      }
+    }
+    fetchProjects();
+  }, [group, token, url, issues]);
+
+  // Convert issues to nodes and edges.
+  useEffect(() => {
     let filteredIssues = issues;
     if (selectedIteration !== "all") {
       filteredIssues = issues.filter(
@@ -177,22 +302,34 @@ function IssuesDependencyGraph() {
       );
     }
 
-    // Create nodes: each issue becomes a node.
-    const nodes = filteredIssues.map((issue) => {
+    const builtNodes = filteredIssues.map((issue) => {
       const safeId = issue.id
         .split("/")
         .pop()
         .replace(/[^0-9]/g, "");
+      const title = issue.title ? issue.title.trim() : "No Title";
+      const labelArray =
+        issue.labels && issue.labels.nodes
+          ? issue.labels.nodes.map((l) => ({
+              title: l.title,
+              color: l.color,
+              project: issue.projectId,
+            }))
+          : [];
+      const project = issue.projectId ? issue.projectId.toString() : "Default Project";
+
       return {
         id: safeId,
-        label: issue.title ? issue.title.trim() : "No Title",
+        component: CustomNode,
+        title,
+        description: issue.description || "No Description",
+        labels: labelArray,
+        project,
       };
     });
 
-    // Create links: for each issue, add a directed link from each dependency (if open)
-    // to the issue—but only if that dependency is also in our filtered issues.
+    const builtEdges = [];
     const issueIdSet = new Set(filteredIssues.map((issue) => issue.id));
-    const links = [];
     filteredIssues.forEach((issue) => {
       const targetSafeId = issue.id
         .split("/")
@@ -200,51 +337,38 @@ function IssuesDependencyGraph() {
         .replace(/[^0-9]/g, "");
       if (issue.blockedByIssues && issue.blockedByIssues.nodes.length > 0) {
         issue.blockedByIssues.nodes.forEach((dep) => {
-          // Only include this dependency if it is open and part of the filtered issues.
           if (!dep.closedAt && issueIdSet.has(dep.id)) {
             const sourceSafeId = dep.id
               .split("/")
               .pop()
               .replace(/[^0-9]/g, "");
-            links.push({
-              source: sourceSafeId,
-              target: targetSafeId,
+            builtEdges.push({
+              id: `${sourceSafeId}-${targetSafeId}`,
+              from: sourceSafeId,
+              to: targetSafeId,
+              arrows: "to",
             });
           }
         });
       }
     });
 
-    // Filter nodes: keep only nodes that appear in at least one link.
-    const linkedIds = new Set();
-    links.forEach((link) => {
-      linkedIds.add(link.source);
-      linkedIds.add(link.target);
+    const connectedIds = new Set();
+    builtEdges.forEach((edge) => {
+      connectedIds.add(edge.from);
+      connectedIds.add(edge.to);
     });
-    const filteredNodes = nodes.filter((node) => linkedIds.has(node.id));
+    const filteredNodes = builtNodes.filter((node) => connectedIds.has(node.id));
 
-    // Compute levels for the nodes and assign x/y positions.
-    const nodesWithLevels = computeLevels(filteredNodes, links);
-    const maxLevel = Math.max(...nodesWithLevels.map((n) => n.level));
-    const levelGroups = {};
-    nodesWithLevels.forEach((node) => {
-      if (!levelGroups[node.level]) levelGroups[node.level] = [];
-      levelGroups[node.level].push(node);
-    });
-    Object.keys(levelGroups).forEach((levelStr) => {
-      const level = parseInt(levelStr, 10);
-      const groupNodes = levelGroups[level];
-      // Set x based on level and y evenly distributed.
-      const x = (level / (maxLevel + 1)) * graphConfig.width + 50;
-      const spacing = graphConfig.height / (groupNodes.length + 1);
-      groupNodes.forEach((node, idx) => {
-        node.x = x;
-        node.y = (idx + 1) * spacing;
-      });
-    });
+    setNodes(filteredNodes);
+    setEdges(builtEdges);
+  }, [issues, selectedIteration]);
 
-    setGraphData({ nodes: nodesWithLevels, links });
-  }, [issues, selectedIteration, graphConfig.width, graphConfig.height]);
+  useEffect(() => {
+    if (networkInstance && nodes.length > 0) {
+      networkInstance.fit();
+    }
+  }, [networkInstance, nodes]);
 
   const handleIterationChange = (event) => {
     setSelectedIteration(event.target.value);
@@ -266,21 +390,81 @@ function IssuesDependencyGraph() {
     <DashboardLayout>
       <DashboardNavbar />
       <MDBox py={3} px={3}>
-        {/* Iteration selection dropdown */}
-        <MDBox mb={3}>
-          <MDTypography variant="h6" mb={1}>
-            Select Iteration:
-          </MDTypography>
-          <select value={selectedIteration} onChange={handleIterationChange}>
-            <option value="all">All Iterations</option>
-            {iterations.map((iter) => (
-              <option key={iter.startDate} value={iter.startDate}>
-                {iter.title ? iter.title : iter.startDate}
-              </option>
-            ))}
-          </select>
+        <MDBox mb={3} display="flex" alignItems="center" justifyContent="space-between">
+          {/* Iteration Selector on the Left */}
+          <MDBox display="flex" alignItems="center">
+            <FormControl>
+              <InputLabel id="iteration-select-label">Select Iteration</InputLabel>
+              <Select
+                labelId="iteration-select-label"
+                value={selectedIteration}
+                onChange={handleIterationChange}
+                label="Select Iteration"
+                sx={{ padding: 1 }}
+              >
+                <MenuItem value="all">All Iterations</MenuItem>
+                {iterations.map((iter) => (
+                  <MenuItem key={`${iter.startDate}-${iter.id}`} value={iter.startDate}>
+                    {iter.title ? iter.title : iter.startDate}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </MDBox>
+          {/* Projects Legend on the Right */}
+          <MDBox ml={3}>
+            <MDTypography variant="h6">Projects Legend:</MDTypography>
+            <div style={{ display: "flex", flexWrap: "wrap" }}>
+              {projects.map((project) => (
+                <div
+                  key={project.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginRight: "16px",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "20px",
+                      height: "20px",
+                      backgroundColor: getProjectColor(project.id),
+                      marginRight: "8px",
+                      border: "1px solid black",
+                    }}
+                  />
+                  <MDTypography variant="button">{project.name}</MDTypography>
+                </div>
+              ))}
+            </div>
+          </MDBox>
         </MDBox>
-        <Graph id="issues-dependency-graph" data={graphData} config={graphConfig} />
+        <div
+          style={{
+            height: window.innerHeight * 0.8,
+            width: window.innerWidth * 0.8,
+            overflow: "hidden",
+            position: "relative",
+          }}
+        >
+          <Network options={visOptions} getNetwork={(net) => setNetworkInstance(net)}>
+            {nodes.map((node) => (
+              <Node
+                key={node.id}
+                id={node.id}
+                component={node.component}
+                title={node.title}
+                description={node.description}
+                labels={node.labels}
+                project={node.project}
+              />
+            ))}
+            {edges.map((edge) => (
+              <Edge key={edge.id} id={edge.id} from={edge.from} to={edge.to} arrows={edge.arrows} />
+            ))}
+          </Network>
+        </div>
       </MDBox>
       <Footer />
     </DashboardLayout>

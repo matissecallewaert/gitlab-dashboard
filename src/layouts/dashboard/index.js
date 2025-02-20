@@ -11,6 +11,7 @@ import VerticalBarChart from "examples/Charts/BarCharts/VerticalBarChart";
 import MDTypography from "components/MDTypography";
 import SprintCycleTime from "./components/SprintCycleTime";
 import Sprints from "./components/sprints";
+import FullCalendarCard from "components/Calendar";
 
 function Dashboard() {
   const [controller] = useMaterialUIController();
@@ -75,7 +76,6 @@ function Dashboard() {
         });
         const iterationsResult = await iterationsResponse.json();
         const iterations = iterationsResult.data.group.iterations.nodes;
-        console.log(iterations);
 
         // Now fetch all issues with pagination.
         let allIssues = [];
@@ -305,15 +305,7 @@ function Dashboard() {
                 </FadeIn>
               </Grid>
               <Grid item xs={12} md={6} mt={3}>
-                <FadeIn duration={300}>
-                  <VerticalBarChart
-                    icon={{ component: "person", color: sidenavColor }}
-                    title="Member Hours"
-                    description="Hours worked by each member"
-                    height="19.125rem"
-                    chart={gitlabStats.memberHoursChartData}
-                  />
-                </FadeIn>
+                <FullCalendarCard />
               </Grid>
             </Grid>
           </Grid>
@@ -327,7 +319,17 @@ function Dashboard() {
                 </FadeIn>
               </Grid>
               {/* Additional content could go here */}
-              <Grid item xs={12} md={6}></Grid>
+              <Grid item xs={12} md={6}>
+                <FadeIn duration={300}>
+                  <VerticalBarChart
+                    icon={{ component: "person", color: sidenavColor }}
+                    title="Member Hours"
+                    description="Hours worked by each member"
+                    height="19.125rem"
+                    chart={gitlabStats.memberHoursChartData}
+                  />
+                </FadeIn>
+              </Grid>
             </Grid>
           </Grid>
         </Grid>

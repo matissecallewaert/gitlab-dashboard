@@ -229,7 +229,7 @@ function MemberIterationMetrics() {
                       justifyContent="space-between"
                     >
                       <Avatar src={member.avatarUrl} alt={member.name || member.username} />
-                      <MDTypography variant="h6" ml={1}>
+                      <MDTypography variant="h6" ml={1} color="white">
                         {member.name || member.username}
                       </MDTypography>
                     </MDBox>
