@@ -27,7 +27,7 @@ deploy:
     - name: docker:dind
       alias: docker
   variables:
-    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_HOST: "tcp://host.docker.internal:2375"
     DOCKER_TLS_CERTDIR: ""
   script:
     - docker info
