@@ -32,7 +32,7 @@ deploy:
       alias: docker
   script:
     - docker info
-    - docker build -t pm-dashboard ./build
+    - docker build -t pm-dashboard .
     - docker stop pm-dashboard || true
     - docker rm pm-dashboard || true
     - docker run -d --name pm-dashboard -p 8090:3000 pm-dashboard
