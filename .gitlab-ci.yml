@@ -1,10 +1,14 @@
 stages:
   - build
-  - test
   - deploy
 
 variables:
   DOCKER_IMAGE: "node:latest"
+
+cache:
+  paths:
+    - node_modules/
+    - .npm/
 
 build:
   stage: build
@@ -22,12 +26,12 @@ deploy:
   stage: deploy
   tags:
     - node
-  image: docker:latest
+  image: docker:stable
   services:
-    - name: docker:dind
+    - name: docker:stable-dind
       alias: docker
   variables:
-    DOCKER_HOST: "tcp://host.docker.internal:2375"
+    DOCKER_HOST: "tcp://docker:2375"
     DOCKER_TLS_CERTDIR: ""
   script:
     - docker info
