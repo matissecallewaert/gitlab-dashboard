@@ -1,0 +1,38 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  DOCKER_IMAGE: "node:latest"
+
+cache:
+  paths:
+    - node_modules/
+    - .npm/
+
+build:
+  stage: build
+  tags:
+    - node
+  image: $DOCKER_IMAGE
+  script:
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - build/
+
+deploy:
+  stage: deploy
+  tags:
+    - node
+  image: docker:stable
+  services:
+    - name: docker:stable-dind
+      alias: docker
+  script:
+    - docker info
+    - docker build -t pm-dashboard .
+    - docker stop pm-dashboard || true
+    - docker rm pm-dashboard || true
+    - docker run -d --name pm-dashboard -p 8090:3000 -e REACT_APP_GITLAB_URL="$REACT_APP_GITLAB_URL" -e REACT_APP_GITLAB_GROUP="$REACT_APP_GITLAB_GROUP" -e REACT_APP_GITLAB_TOKEN="$REACT_APP_GITLAB_TOKEN" pm-dashboard
