@@ -23,7 +23,7 @@ build:
       - build/
 
 deploy:
-  stage: deploy
+  stage: deploy8
   tags:
     - node
   image: docker:stable
@@ -35,4 +35,8 @@ deploy:
     - docker build -t pm-dashboard .
     - docker stop pm-dashboard || true
     - docker rm pm-dashboard || true
-    - docker run -d --name pm-dashboard -p 8090:3000 pm-dashboard
+    - docker run -d --name pm-dashboard -p 8090:3000 \
+              -e REACT_APP_GITLAB_URL="$REACT_APP_GITLAB_URL" \
+              -e REACT_APP_GITLAB_GROUP="$REACT_APP_GITLAB_GROUP" \
+              -e REACT_APP_GITLAB_TOKEN="$REACT_APP_GITLAB_TOKEN" \
+              pm-dashboard
