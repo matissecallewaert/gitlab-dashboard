@@ -30,9 +30,12 @@ deploy:
   services:
     - name: docker:stable-dind
       alias: docker
+  variables:
+    DOCKER_HOST: "tcp://localhost:2375"
+    DOCKER_TLS_CERTDIR: ""
   script:
     - docker info
-    - docker build -t pm-dashboard ./build
+    - docker build -t pm-dashboard .
     - docker stop pm-dashboard || true
     - docker rm pm-dashboard || true
     - docker run -d --name pm-dashboard -p 8090:3000 pm-dashboard
