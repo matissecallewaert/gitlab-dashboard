@@ -19,26 +19,12 @@ function Sprints() {
 
   useEffect(() => {
     async function fetchData() {
-      const query = `
-        query {
-          group(fullPath: "${group}") {
-            iterations {
-              nodes {
-                id
-                title
-                startDate
-                dueDate
-              }
-            }
-            issues(includeSubgroups: true) {
-              nodes {
-                weight
-                timelogs(first: 100000) {
-                  nodes {
-                    timeSpent
-                  }
-                }
-                iteration {
+      try {
+        const iterationsQuery = `
+          query {
+            group(fullPath: "${group}") {
+              iterations {
+                nodes {
                   id
                   title
                   startDate
@@ -47,25 +33,76 @@ function Sprints() {
               }
             }
           }
-        }
-      `;
-      try {
-        const response = await fetch(url, {
+        `;
+        const iterationsResponse = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token,
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: iterationsQuery }),
         });
-        const result = await response.json();
-        const iterations = result.data.group.iterations.nodes;
-        const issues = result.data.group.issues.nodes;
+        const iterationsResult = await iterationsResponse.json();
+        const iterations = iterationsResult.data.group.iterations.nodes;
+
+        // Now fetch all issues with pagination
+        let allIssues = [];
+        let hasNextPage = true;
+        let after = null;
+        while (hasNextPage) {
+          const issuesQuery = `
+            query($after: String) {
+              group(fullPath: "${group}") {
+                issues(includeSubgroups: true, first: 100, after: $after) {
+                  nodes {
+                    weight
+                    timelogs(first: 100) {
+                      nodes {
+                        timeSpent
+                      }
+                    }
+                    iteration {
+                      id
+                      title
+                      startDate
+                      dueDate
+                    }
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+            }
+          `;
+          const issuesResponse = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+            body: JSON.stringify({
+              query: issuesQuery,
+              variables: { after },
+            }),
+          });
+          const issuesResult = await issuesResponse.json();
+          const issuesData = issuesResult.data.group.issues;
+          allIssues = allIssues.concat(issuesData.nodes);
+          hasNextPage = issuesData.pageInfo.hasNextPage;
+          after = issuesData.pageInfo.endCursor;
+        }
+
+        // Delete iteration with id="gid://gitlab/Iteration/60" from the iterations array
+        const filteredIterations = iterations.filter(
+          (iter) => iter.id !== "gid://gitlab/Iteration/60"
+        );
 
         // Build a dictionary keyed by iteration id.
         // Use iteration title if available; otherwise fallback to its startDate.
         const sprintData = {};
-        iterations.forEach((iteration) => {
+        filteredIterations.forEach((iteration) => {
           const label = iteration.title ? iteration.title : iteration.startDate;
           sprintData[iteration.id] = {
             label,
@@ -76,7 +113,7 @@ function Sprints() {
         });
 
         // Process each issue that belongs to an iteration.
-        issues.forEach((issue) => {
+        allIssues.forEach((issue) => {
           if (issue.iteration && sprintData[issue.iteration.id]) {
             const weight = issue.weight || 0;
             sprintData[issue.iteration.id].totalWeights += weight;

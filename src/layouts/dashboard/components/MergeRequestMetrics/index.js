@@ -15,12 +15,16 @@ function MergeRequestMetrics() {
   const url = process.env.REACT_APP_GITLAB_URL;
   const token = process.env.REACT_APP_GITLAB_TOKEN;
 
-  useEffect(() => {
-    async function fetchMergeRequests() {
+  // Helper function to fetch all merge requests with pagination
+  async function fetchAllMergeRequests() {
+    let allMergeRequests = [];
+    let hasNextPage = true;
+    let after = null;
+    while (hasNextPage) {
       const query = `
         query {
           group(fullPath: "${group}") {
-            mergeRequests(includeSubgroups: true, first: 100) {
+            mergeRequests(includeSubgroups: true, first: 100${after ? `, after: "${after}"` : ""}) {
               nodes {
                 title
                 createdAt
@@ -36,22 +40,35 @@ function MergeRequestMetrics() {
                   }
                 }
               }
+              pageInfo {
+                endCursor
+                hasNextPage
+              }
             }
           }
         }
       `;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token,
+        },
+        body: JSON.stringify({ query }),
+      });
+      const result = await response.json();
+      const mergeRequestsData = result.data.group.mergeRequests;
+      allMergeRequests = allMergeRequests.concat(mergeRequestsData.nodes);
+      hasNextPage = mergeRequestsData.pageInfo.hasNextPage;
+      after = mergeRequestsData.pageInfo.endCursor;
+    }
+    return allMergeRequests;
+  }
+
+  useEffect(() => {
+    async function fetchMergeRequests() {
       try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            // Replace with your actual GitLab private token
-            Authorization: token,
-          },
-          body: JSON.stringify({ query }),
-        });
-        const result = await response.json();
-        const mergeRequests = result.data.group.mergeRequests.nodes;
+        const mergeRequests = await fetchAllMergeRequests();
 
         // Sort merge requests by createdAt in descending order (newest first)
         const sortedMergeRequests = mergeRequests.sort(
@@ -92,7 +109,7 @@ function MergeRequestMetrics() {
     }
 
     fetchMergeRequests();
-  }, []);
+  }, [group, token, url]);
 
   if (loading) {
     return (

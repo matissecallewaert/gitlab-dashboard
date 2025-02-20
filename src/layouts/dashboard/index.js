@@ -49,61 +49,91 @@ function Dashboard() {
 
   useEffect(() => {
     const fetchGitlabData = async () => {
-      // Query now fetches iterations (sprints) along with issues (including timelogs and assignees)
-      const query = `
-        query {
-          group(fullPath: "${group}") {
-            iterations {
-              nodes {
-                id
-                title
-                startDate
-                dueDate
-              }
-            }
-            issues(includeSubgroups: true) {
-              nodes {
-                title
-                iid
-                timelogs(first: 100000) {
-                  nodes {
-                    summary
-                    timeSpent
-                    spentAt
-                    user {
-                      username
-                    }
-                  }
-                }
-                assignees {
-                  nodes {
-                    username
-                  }
+      try {
+        // First, fetch iterations (sprints) without pagination.
+        const iterationsQuery = `
+          query {
+            group(fullPath: "${group}") {
+              iterations {
+                nodes {
+                  id
+                  title
+                  startDate
+                  dueDate
                 }
               }
             }
           }
-        }
-      `;
-
-      try {
-        const response = await fetch(url, {
+        `;
+        const iterationsResponse = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Replace with your actual GitLab private token
             Authorization: token,
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: iterationsQuery }),
         });
+        const iterationsResult = await iterationsResponse.json();
+        const iterations = iterationsResult.data.group.iterations.nodes;
+        console.log(iterations);
 
-        const result = await response.json();
-        const iterations = result.data.group.iterations.nodes;
-        const issues = result.data.group.issues.nodes;
+        // Now fetch all issues with pagination.
+        let allIssues = [];
+        let hasNextPage = true;
+        let after = null;
+        while (hasNextPage) {
+          const issuesQuery = `
+            query($after: String) {
+              group(fullPath: "${group}") {
+                issues(includeSubgroups: true, first: 100, after: $after) {
+                  nodes {
+                    title
+                    iid
+                    timelogs(first: 100) {
+                      nodes {
+                        summary
+                        timeSpent
+                        spentAt
+                        user {
+                          username
+                        }
+                      }
+                    }
+                    assignees {
+                      nodes {
+                        username
+                      }
+                    }
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+            }
+          `;
+          const issuesResponse = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+            body: JSON.stringify({
+              query: issuesQuery,
+              variables: { after },
+            }),
+          });
+          const issuesResult = await issuesResponse.json();
+          const issuesData = issuesResult.data.group.issues;
+          allIssues = allIssues.concat(issuesData.nodes);
+          hasNextPage = issuesData.pageInfo.hasNextPage;
+          after = issuesData.pageInfo.endCursor;
+        }
 
         let totalSeconds = 0;
         let loggedIssuesCount = 0;
-        let totalIssues = issues.length;
+        let totalIssues = allIssues.length;
         const memberHours = {};
 
         // Build an object keyed by iteration (sprint) using its title (or fallback to startDate)
@@ -122,7 +152,7 @@ function Dashboard() {
         });
 
         // Process each issue's timelogs
-        issues.forEach((issue) => {
+        allIssues.forEach((issue) => {
           if (issue.timelogs && issue.timelogs.nodes.length > 0) {
             loggedIssuesCount += 1;
           }
@@ -158,14 +188,14 @@ function Dashboard() {
 
         const totalHours = (totalSeconds / 3600).toFixed(2);
 
-        // Build iteration data arrays only for iterations with logged hours
+        // Build iteration data arrays only for iterations with logged hours.
         const filteredIterations = Object.values(iterationSummary).filter(
           (iter) => iter.totalTime > 0
         );
         const iterationLabels = filteredIterations.map((iter) => iter.title);
         const iterationData = filteredIterations.map((iter) => (iter.totalTime / 3600).toFixed(2));
 
-        // Build member hours chart data
+        // Build member hours chart data.
         const memberLabels = Object.keys(memberHours).sort(
           (a, b) => memberHours[b] - memberHours[a]
         );
@@ -203,7 +233,7 @@ function Dashboard() {
     };
 
     fetchGitlabData();
-  }, []);
+  }, [group, url, token]);
 
   if (loading) {
     return (
@@ -274,15 +304,14 @@ function Dashboard() {
                   <Sprints />
                 </FadeIn>
               </Grid>
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={6} mt={3}>
                 <FadeIn duration={300}>
                   <VerticalBarChart
-                    icon={{ component: "person", color: "dark" }}
+                    icon={{ component: "person", color: sidenavColor }}
                     title="Member Hours"
                     description="Hours worked by each member"
                     height="19.125rem"
                     chart={gitlabStats.memberHoursChartData}
-                    color={sidenavColor}
                   />
                 </FadeIn>
               </Grid>

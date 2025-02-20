@@ -13,20 +13,21 @@ function MemberIterationMetrics() {
   const [memberMetrics, setMemberMetrics] = useState({});
   const [iterationsList, setIterationsList] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
+  const [issues, setIssues] = useState([]);
   const [controller] = useMaterialUIController();
   const { sidenavColor } = controller;
 
   useEffect(() => {
     async function fetchData() {
-      // Read values from environment variables
       const group = process.env.REACT_APP_GITLAB_GROUP;
       const url = process.env.REACT_APP_GITLAB_URL;
       const token = process.env.REACT_APP_GITLAB_TOKEN;
 
-      const query = `
+      // First, fetch groupMembers and iterations.
+      const infoQuery = `
         query {
           group(fullPath: "${group}") {
-            groupMembers (first: 9) {
+            groupMembers(first: 9) {
               nodes {
                 user {
                   name
@@ -44,45 +45,29 @@ function MemberIterationMetrics() {
                 dueDate
               }
             }
-            issues(includeSubgroups: true) {
-              nodes {
-                timelogs(first: 100000) {
-                  nodes {
-                    timeSpent
-                    spentAt
-                    user {
-                      username
-                    }
-                  }
-                }
-                assignees {
-                  nodes {
-                    username
-                  }
-                }
-              }
-            }
           }
         }
       `;
       try {
-        const response = await fetch(url, {
+        const infoResponse = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token,
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: infoQuery }),
         });
-        const result = await response.json();
-        const groupData = result.data.group;
+        const infoResult = await infoResponse.json();
+        if (!infoResult.data) {
+          throw new Error("Error fetching group info: " + JSON.stringify(infoResult.errors));
+        }
+        const groupData = infoResult.data.group;
 
-        // Extract members
+        // Extract members.
         const members = groupData.groupMembers.nodes.map((node) => node.user);
         setGroupMembers(members);
 
-        // Process iterations.
-        // For each iteration, use the title if available; otherwise, use its startDate as a fallback.
+        // Process iterations: use title if available; otherwise fallback to startDate.
         const iterations = groupData.iterations.nodes.map((iter) => {
           const key = iter.title ? iter.title : iter.startDate;
           return {
@@ -91,11 +76,71 @@ function MemberIterationMetrics() {
             due: iter.dueDate ? new Date(iter.dueDate) : null,
           };
         });
-        // Sort iterations by start date ascending.
+        // Sort iterations by start date.
         iterations.sort((a, b) => a.start - b.start);
         setIterationsList(iterations);
 
-        // Initialize memberMetrics: for each member, create an object mapping each iteration key to 0 hours.
+        // Now, fetch all issues with pagination.
+        let allIssues = [];
+        let hasNextPage = true;
+        let after = null;
+        while (hasNextPage) {
+          const issuesQuery = `
+            query($after: String) {
+              group(fullPath: "${group}") {
+                issues(includeSubgroups: true, first: 100, after: $after) {
+                  nodes {
+                    timelogs(first: 100) {
+                      nodes {
+                        timeSpent
+                        spentAt
+                        user {
+                          username
+                        }
+                      }
+                    }
+                    assignees {
+                      nodes {
+                        username
+                      }
+                    }
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+            }
+          `;
+          const issuesResponse = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+            body: JSON.stringify({
+              query: issuesQuery,
+              variables: { after },
+            }),
+          });
+          const issuesResult = await issuesResponse.json();
+          if (!issuesResult.data) {
+            throw new Error("Error fetching issues: " + JSON.stringify(issuesResult.errors));
+          }
+          const issuesData = issuesResult.data.group.issues;
+          allIssues = allIssues.concat(issuesData.nodes);
+          hasNextPage = issuesData.pageInfo.hasNextPage;
+          after = issuesData.pageInfo.endCursor;
+        }
+        // For this metric, we assume we only care about issues that have timelogs.
+        const issuesWithTimelogs = allIssues.filter(
+          (issue) => issue.timelogs && issue.timelogs.nodes.length > 0
+        );
+        setIssues(issuesWithTimelogs);
+
+        // Initialize memberMetrics:
+        // For each member, create an object mapping each iteration key to 0 hours.
         const metrics = {};
         members.forEach((member) => {
           metrics[member.username] = {};
@@ -104,45 +149,40 @@ function MemberIterationMetrics() {
           });
         });
 
-        // Process issues and timelogs.
-        const issues = groupData.issues.nodes;
-        issues.forEach((issue) => {
-          if (issue.timelogs && issue.timelogs.nodes.length > 0) {
-            issue.timelogs.nodes.forEach((log) => {
-              const logDate = new Date(log.spentAt);
-              // Determine which iteration(s) this timelog belongs to.
-              iterations.forEach((iter) => {
-                if (iter.start && iter.due && logDate >= iter.start && logDate <= iter.due) {
-                  // Determine which member(s) get this logged time.
-                  const assignees = issue.assignees.nodes;
-                  if (assignees && assignees.length > 0) {
-                    // Split logged time evenly among assignees.
-                    const distributedTime = log.timeSpent / assignees.length;
-                    assignees.forEach((a) => {
-                      if (metrics[a.username] !== undefined) {
-                        metrics[a.username][iter.key] += distributedTime;
-                      }
-                    });
-                  } else {
-                    // If no assignees, attribute to the log's user.
-                    const username = log.user.username;
-                    if (metrics[username] !== undefined) {
-                      metrics[username][iter.key] += log.timeSpent;
+        // Process each issue's timelogs.
+        issuesWithTimelogs.forEach((issue) => {
+          issue.timelogs.nodes.forEach((log) => {
+            const logDate = new Date(log.spentAt);
+            iterations.forEach((iter) => {
+              if (iter.start && iter.due && logDate >= iter.start && logDate <= iter.due) {
+                // Determine which member(s) get this logged time.
+                const assignees = issue.assignees.nodes;
+                if (assignees && assignees.length > 0) {
+                  // Split logged time evenly.
+                  const distributedTime = log.timeSpent / assignees.length;
+                  assignees.forEach((a) => {
+                    if (metrics[a.username] !== undefined) {
+                      metrics[a.username][iter.key] += distributedTime;
                     }
+                  });
+                } else {
+                  // If no assignees, attribute to the log's user.
+                  const username = log.user.username;
+                  if (metrics[username] !== undefined) {
+                    metrics[username][iter.key] += log.timeSpent;
                   }
                 }
-              });
+              }
             });
-          }
+          });
         });
 
-        // Convert seconds to hours and format as strings with two decimals.
+        // Convert seconds to hours with two decimals.
         Object.keys(metrics).forEach((username) => {
           Object.keys(metrics[username]).forEach((iterKey) => {
             metrics[username][iterKey] = (metrics[username][iterKey] / 3600).toFixed(2);
           });
         });
-
         setMemberMetrics(metrics);
       } catch (error) {
         console.error("Error fetching member iteration metrics:", error);
@@ -189,7 +229,7 @@ function MemberIterationMetrics() {
                       justifyContent="space-between"
                     >
                       <Avatar src={member.avatarUrl} alt={member.name || member.username} />
-                      <MDTypography variant="h6" color="white" ml={1}>
+                      <MDTypography variant="h6" ml={1}>
                         {member.name || member.username}
                       </MDTypography>
                     </MDBox>

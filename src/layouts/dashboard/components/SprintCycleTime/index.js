@@ -16,41 +16,74 @@ function SprintCycleTime() {
 
   useEffect(() => {
     async function fetchData() {
-      const query = `
-      query {
-        group(fullPath: "${group}") {
-          iterations {
-            nodes {
-              id
-              title
-              startDate
-              dueDate
-            }
-          }
-          issues(includeSubgroups: true) {
-            nodes {
-              createdAt
-              closedAt
-              iteration {
-                id
+      try {
+        const iterationsQuery = `
+          query {
+            group(fullPath: "${group}") {
+              iterations {
+                nodes {
+                  id
+                  title
+                  startDate
+                  dueDate
+                }
               }
             }
           }
-        }
-      }
-      `;
-      try {
-        const response = await fetch(url, {
+        `;
+        const iterationsResponse = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token,
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: iterationsQuery }),
         });
-        const result = await response.json();
-        const iterations = result.data.group.iterations.nodes;
-        const issues = result.data.group.issues.nodes;
+        const iterationsResult = await iterationsResponse.json();
+        const iterations = iterationsResult.data.group.iterations.nodes;
+
+        // Now, fetch all issues using pagination
+        let allIssues = [];
+        let hasNextPage = true;
+        let after = null;
+
+        while (hasNextPage) {
+          const issuesQuery = `
+            query($after: String) {
+              group(fullPath: "${group}") {
+                issues(includeSubgroups: true, first: 100, after: $after) {
+                  nodes {
+                    createdAt
+                    closedAt
+                    iteration {
+                      id
+                    }
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+            }
+          `;
+          const issuesResponse = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+            body: JSON.stringify({
+              query: issuesQuery,
+              variables: { after },
+            }),
+          });
+          const issuesResult = await issuesResponse.json();
+          const issuesData = issuesResult.data.group.issues;
+          allIssues = allIssues.concat(issuesData.nodes);
+          hasNextPage = issuesData.pageInfo.hasNextPage;
+          after = issuesData.pageInfo.endCursor;
+        }
 
         // Process each iteration and filter out ones without valid issue metrics.
         const rows = iterations
@@ -61,7 +94,7 @@ function SprintCycleTime() {
             let count = 0;
 
             // Filter issues belonging to this iteration
-            const iterationIssues = issues.filter(
+            const iterationIssues = allIssues.filter(
               (issue) => issue.iteration && issue.iteration.id === iteration.id
             );
 
@@ -70,6 +103,7 @@ function SprintCycleTime() {
                 const created = new Date(issue.createdAt);
                 const closed = new Date(issue.closedAt);
                 const leadTime = (closed - created) / (1000 * 60 * 60); // in hours
+                // Ensure we use the later of the issue creation or iteration start as effective start
                 const effectiveStart = created > iterationStart ? created : iterationStart;
                 const cycleTime = (closed - effectiveStart) / (1000 * 60 * 60);
                 totalLeadTime += leadTime;

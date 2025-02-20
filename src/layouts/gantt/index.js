@@ -9,6 +9,10 @@ import { Graph } from "react-d3-graph";
 function IssuesDependencyGraph() {
   const [loading, setLoading] = useState(true);
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [issues, setIssues] = useState([]);
+  const [iterations, setIterations] = useState([]);
+  const [selectedIteration, setSelectedIteration] = useState("all");
+
   const url = process.env.REACT_APP_GITLAB_URL;
   const token = process.env.REACT_APP_GITLAB_TOKEN;
   const group = process.env.REACT_APP_GITLAB_GROUP;
@@ -33,7 +37,7 @@ function IssuesDependencyGraph() {
     staticGraph: true,
   };
 
-  // Compute node levels based on dependencies (edges).
+  // Helper to compute node levels and assign positions.
   const computeLevels = (nodes, links) => {
     const nodeMap = {};
     nodes.forEach((node) => {
@@ -68,104 +72,92 @@ function IssuesDependencyGraph() {
     return Object.values(nodeMap);
   };
 
+  // Fetch iterations and issues using pagination.
   useEffect(() => {
     async function fetchData() {
-      const query = `
-        query {
-          group(fullPath: "${group}") {
-            issues(includeSubgroups: true) {
-              nodes {
-                id
-                title
-                blockedByIssues {
-                  nodes {
-                    id
-                  }
+      try {
+        // Fetch iterations (for the dropdown) including startDate.
+        const iterationsQuery = `
+          query {
+            group(fullPath: "${group}") {
+              iterations {
+                nodes {
+                  id
+                  title
+                  startDate
                 }
               }
             }
           }
-        }
-      `;
-      try {
-        const response = await fetch(url, {
+        `;
+        const iterationsResponse = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: token,
           },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query: iterationsQuery }),
         });
-        const result = await response.json();
-        const issues = result.data.group.issues.nodes;
+        const iterationsResult = await iterationsResponse.json();
+        const fetchedIterations = iterationsResult.data.group.iterations.nodes;
+        // Delete iteration with id="gid://gitlab/Iteration/60"
+        const filteredIterations = fetchedIterations.filter(
+          (iter) => iter.id !== "gid://gitlab/Iteration/60"
+        );
+        setIterations(filteredIterations);
 
-        // Create nodes: each issue becomes a node.
-        const nodes = issues.map((issue) => {
-          // Create a safe ID by extracting only the numeric part.
-          const safeId = issue.id
-            .split("/")
-            .pop()
-            .replace(/[^0-9]/g, "");
-          return {
-            id: safeId,
-            label: issue.title ? issue.title.trim() : "No Title",
-          };
-        });
-
-        // Create links: for each issue, for each dependency (blockedByIssues),
-        // create a directed link from the dependency to the current issue.
-        const links = [];
-        issues.forEach((issue) => {
-          const safeTargetId = issue.id
-            .split("/")
-            .pop()
-            .replace(/[^0-9]/g, "");
-          if (issue.blockedByIssues && issue.blockedByIssues.nodes.length > 0) {
-            issue.blockedByIssues.nodes.forEach((dep) => {
-              const safeSourceId = dep.id
-                .split("/")
-                .pop()
-                .replace(/[^0-9]/g, "");
-              links.push({
-                source: safeSourceId,
-                target: safeTargetId,
-              });
-            });
-          }
-        });
-
-        // Filter nodes: keep only nodes that appear in at least one link.
-        const linkedIds = new Set();
-        links.forEach((link) => {
-          linkedIds.add(link.source);
-          linkedIds.add(link.target);
-        });
-        const filteredNodes = nodes.filter((node) => linkedIds.has(node.id));
-
-        // Compute levels using our helper.
-        const nodesWithLevels = computeLevels(filteredNodes, links);
-        // Find maximum level.
-        const maxLevel = Math.max(...nodesWithLevels.map((n) => n.level));
-        // Group nodes by level.
-        const levelGroups = {};
-        nodesWithLevels.forEach((node) => {
-          if (!levelGroups[node.level]) levelGroups[node.level] = [];
-          levelGroups[node.level].push(node);
-        });
-        // Assign positions: x based on level, y evenly distributed per level.
-        Object.keys(levelGroups).forEach((levelStr) => {
-          const level = parseInt(levelStr, 10);
-          const groupNodes = levelGroups[level];
-          // x position: equally divide available width by (maxLevel+1)
-          const x = (level / (maxLevel + 1)) * graphConfig.width + 50; // add margin if desired
-          const spacing = graphConfig.height / (groupNodes.length + 1);
-          groupNodes.forEach((node, idx) => {
-            node.x = x;
-            node.y = (idx + 1) * spacing;
+        // Now fetch all issues with pagination.
+        let allIssues = [];
+        let hasNextPage = true;
+        let after = null;
+        while (hasNextPage) {
+          const issuesQuery = `
+            query($after: String) {
+              group(fullPath: "${group}") {
+                issues(includeSubgroups: true, first: 100, after: $after, state: opened) {
+                  nodes {
+                    id
+                    title
+                    closedAt
+                    iteration {
+                      id
+                      startDate
+                    }
+                    blockedByIssues {
+                      nodes {
+                        id
+                        closedAt
+                      }
+                    }
+                  }
+                  pageInfo {
+                    endCursor
+                    hasNextPage
+                  }
+                }
+              }
+            }
+          `;
+          const issuesResponse = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+            body: JSON.stringify({
+              query: issuesQuery,
+              variables: { after },
+            }),
           });
-        });
-
-        setGraphData({ nodes: nodesWithLevels, links });
+          const issuesResult = await issuesResponse.json();
+          const issuesData = issuesResult.data.group.issues;
+          allIssues = allIssues.concat(issuesData.nodes);
+          hasNextPage = issuesData.pageInfo.hasNextPage;
+          after = issuesData.pageInfo.endCursor;
+        }
+        // Filter out any issues that might have a closedAt value.
+        const openIssues = allIssues.filter((issue) => !issue.closedAt);
+        setIssues(openIssues);
       } catch (error) {
         console.error("Error fetching dependency graph data:", error);
       } finally {
@@ -174,6 +166,89 @@ function IssuesDependencyGraph() {
     }
     fetchData();
   }, [group, token, url]);
+
+  // Recompute graph data when issues or the selected iteration change.
+  useEffect(() => {
+    // If an iteration is selected (other than "all"), filter issues by matching iteration.startDate.
+    let filteredIssues = issues;
+    if (selectedIteration !== "all") {
+      filteredIssues = issues.filter(
+        (issue) => issue.iteration && issue.iteration.startDate === selectedIteration
+      );
+    }
+
+    // Create nodes: each issue becomes a node.
+    const nodes = filteredIssues.map((issue) => {
+      const safeId = issue.id
+        .split("/")
+        .pop()
+        .replace(/[^0-9]/g, "");
+      return {
+        id: safeId,
+        label: issue.title ? issue.title.trim() : "No Title",
+      };
+    });
+
+    // Create links: for each issue, add a directed link from each dependency (if open)
+    // to the issue—but only if that dependency is also in our filtered issues.
+    const issueIdSet = new Set(filteredIssues.map((issue) => issue.id));
+    const links = [];
+    filteredIssues.forEach((issue) => {
+      const targetSafeId = issue.id
+        .split("/")
+        .pop()
+        .replace(/[^0-9]/g, "");
+      if (issue.blockedByIssues && issue.blockedByIssues.nodes.length > 0) {
+        issue.blockedByIssues.nodes.forEach((dep) => {
+          // Only include this dependency if it is open and part of the filtered issues.
+          if (!dep.closedAt && issueIdSet.has(dep.id)) {
+            const sourceSafeId = dep.id
+              .split("/")
+              .pop()
+              .replace(/[^0-9]/g, "");
+            links.push({
+              source: sourceSafeId,
+              target: targetSafeId,
+            });
+          }
+        });
+      }
+    });
+
+    // Filter nodes: keep only nodes that appear in at least one link.
+    const linkedIds = new Set();
+    links.forEach((link) => {
+      linkedIds.add(link.source);
+      linkedIds.add(link.target);
+    });
+    const filteredNodes = nodes.filter((node) => linkedIds.has(node.id));
+
+    // Compute levels for the nodes and assign x/y positions.
+    const nodesWithLevels = computeLevels(filteredNodes, links);
+    const maxLevel = Math.max(...nodesWithLevels.map((n) => n.level));
+    const levelGroups = {};
+    nodesWithLevels.forEach((node) => {
+      if (!levelGroups[node.level]) levelGroups[node.level] = [];
+      levelGroups[node.level].push(node);
+    });
+    Object.keys(levelGroups).forEach((levelStr) => {
+      const level = parseInt(levelStr, 10);
+      const groupNodes = levelGroups[level];
+      // Set x based on level and y evenly distributed.
+      const x = (level / (maxLevel + 1)) * graphConfig.width + 50;
+      const spacing = graphConfig.height / (groupNodes.length + 1);
+      groupNodes.forEach((node, idx) => {
+        node.x = x;
+        node.y = (idx + 1) * spacing;
+      });
+    });
+
+    setGraphData({ nodes: nodesWithLevels, links });
+  }, [issues, selectedIteration, graphConfig.width, graphConfig.height]);
+
+  const handleIterationChange = (event) => {
+    setSelectedIteration(event.target.value);
+  };
 
   if (loading) {
     return (
@@ -191,6 +266,20 @@ function IssuesDependencyGraph() {
     <DashboardLayout>
       <DashboardNavbar />
       <MDBox py={3} px={3}>
+        {/* Iteration selection dropdown */}
+        <MDBox mb={3}>
+          <MDTypography variant="h6" mb={1}>
+            Select Iteration:
+          </MDTypography>
+          <select value={selectedIteration} onChange={handleIterationChange}>
+            <option value="all">All Iterations</option>
+            {iterations.map((iter) => (
+              <option key={iter.startDate} value={iter.startDate}>
+                {iter.title ? iter.title : iter.startDate}
+              </option>
+            ))}
+          </select>
+        </MDBox>
         <Graph id="issues-dependency-graph" data={graphData} config={graphConfig} />
       </MDBox>
       <Footer />
