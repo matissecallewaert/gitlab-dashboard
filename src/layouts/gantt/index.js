@@ -118,7 +118,7 @@ function IssuesDependencyGraph() {
         enabled: true,
         direction: "LR",
         sortMethod: "directed",
-        nodeSpacing: 150,
+        nodeSpacing: 50,
         levelSeparation: 200,
         treeSpacing: 10,
         blockShifting: true,
